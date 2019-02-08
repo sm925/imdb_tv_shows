@@ -1,0 +1,88 @@
+---
+title: "Top 50 Imdb TV Shows"
+author: "Suchait Mattoo"
+date: "February 8, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Web Scraping of an Imdb Web Page
+
+
+```{r}
+## loading all the packages required:
+library(rvest)
+library(splitstackshape)
+library(tidyr)
+library(data.table)
+library(ggplot2)
+library(scales)
+```
+
+# Scraping and data preparation for a ranking graph
+
+
+```{r}
+url <- 'https://www.imdb.com/chart/toptv/?ref_=nv_tvv_250' # specifying url of a website to be scraped
+
+webpage <- read_html(url) # reading the HTML code from website
+
+rank_data_html <- html_nodes(webpage,'.imdbRating , .titleColumn , .velocity') # using css selector to scrap data
+
+rank_data <- html_text(rank_data_html) # Converting the ranking data to text
+
+head(rank_data) # check how data looks
+```
+
+## Data cleaning and preparing for a ranking graph
+
+```{r}
+rank_data <- gsub("\n","", rank_data) # data-Preprocessing: removing \n
+rank_data<-gsub(" ","",rank_data) # removing excess spaces
+head(rank_data) # another look at the genre data
+```
+
+## Preparation Contd.
+
+```{r}
+df <- data.frame(Rank = rank_data) # creating a data frame
+df <- cbind(head(df,-1), tail(df,-1)) # binding tv show and rankings
+required <- seq(1, nrow(df), 2)
+df <- df[required, ]
+colnames(df)[[2]] <- "imdb_rating" # changing column name
+df <- df %>% separate(Rank, into = c('rank', 'tv_show'), sep = 2) # seperating rank and tv show
+df <- cSplit(df, "tv_show", "(") # splitting year into a different column
+setDT(df) # converting to dat.table
+setnames(df, "tv_show_1", "tv_show") # changing old column names to new ones
+setnames(df, "tv_show_2", "year")
+df[, year := gsub(")", "", year)][, rank := 1:.N][, tv_show := as.character(tv_show)][, tv_show := ifelse(substr(tv_show, 1, 1) == ".", sub("\\.", "", tv_show), tv_show)] # changing data type of the columns and removing . from tv shows
+df <- df[, c("rank", "tv_show", "imdb_rating", "year")] # setting a column order
+df[, tv_show := ifelse(substr(tv_show, 2, 2) == ".", gsub("^[^.]*.", "", tv_show), tv_show)] # few tv shows still have . and number in it, cleaning it
+rm(list=setdiff(ls(), "df")) # cleaning global dir
+df <- cbind(df, as.numeric(as.character(factor(df$imdb_rating)))) # rating column to numeric
+df[, imdb_rating := NULL] # deleting column
+setnames(df, "V2", "imdb_rating")
+df[, year := NULL]
+head(df) # peek into final prepared data for a graph
+```
+
+## Plotting into a dot ranking graph
+
+```{r echo=FALSE}
+theme_set(theme_classic()) # setting theme
+ggplot(df[1:20, ], aes(x = tv_show, y = imdb_rating)) + # just taking top 20 for a graph to look nicer and just top 50 shows
+  geom_point(col = "tomato2", size = 3) +   # draw points
+  geom_segment(aes(x = tv_show, 
+                   xend = tv_show, 
+                   y = min(imdb_rating), 
+                   yend = max(imdb_rating)), 
+               linetype = "dashed", 
+               size = 0.1) +   # draw dashed lines
+  labs(title = "Dot Plot of Imdb top 20 TV Shows", 
+       subtitle = "Tv show Vs Imdb Rating", 
+       caption = "source: imdb") +  
+  coord_flip()
+```
